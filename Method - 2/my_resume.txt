@@ -1,0 +1,63 @@
+Riya Nitin Taori
+§ riya-2510 | ï riya-taori | # riyataori03@gmail.com | H +1-6174476492
+
+Education
+Northeastern University Master of Science in Artificial Intelligence
+VIT B.Tech in CSE With Specialization in AI and ML, CGPA: 9.05 / 10
+
+2025 – Present
+2021 – 2025
+
+Skills
+Programming
+AI / ML / DL
+LLMs
+Automation and Tools
+
+Python, C++, SQL
+Pandas, NumPy, TensorFlow, OpenCV, Whisper, Sarvam AI, Deepgram
+OpenAI API, Gemini, RAG Pipelines, Prompt Engineering
+n8n, Web Scraping, Workflow Orchestration, Git, Github, Docker (basic), FSL
+
+Industry Experience
+Predixion AI
+Mumbai, India
+AI Intern
+Jan 2025 – June 2025
+• Built large-scale audio datasets (500+ hours) using automated diarization, sentiment analysis, and speakerrole tagging, reducing manual labeling effort by 75%.
+• Designed an end-to-end speech intelligence pipeline using Whisper and Deepgram, achieving 92% transcription accuracy in production.
+• Improved downstream call outcome prediction by 23% through optimized speaker classification models (88%
+accuracy).
+Smart Internz Externship — Google Developers
+Remote
+AI Intern
+August 2023 – December 2023
+• Developed an online payment fraud detection system using machine learning to identify suspicious and
+fraudulent transactions in real time.
+• Performed data preprocessing, feature engineering, and model training to improve classification performance
+and reduce false positives.
+• Enhanced transaction security by enabling early fraud detection, supporting timely intervention and risk
+mitigation in digital payment systems.
+
+Projects
+Federated Learning for Medical Image Classification (Knee Osteoarthritis)
+• Pioneered a federated learning framework for X-ray classification, maintaining 100% data privacy across
+three simulated hospital nodes. Boosted model accuracy from 89.27% to 95.53% through Inception-ResNetV2 optimization, achieving a performance gain of 6.26% . Accelerated training convergence by 35% using
+Xavier initialization and advanced regularization strategies.
+Brain fMRI Classification
+• Architected a preprocessing pipeline with motion correction and ROI extraction, accelerating the analysis
+workflow by 50%. Utilized a ResNet50 architecture with transfer learning to achieve 96.6% classification
+accuracy, delivering an 11.6% improvement over VGG16. Validated model performance using 5-fold crossvalidation, ensuring 94% consistency across diverse test datasets.
+Automated Resume Builder
+• Developed an automated resume optimization pipeline that extracts and processes multiple job descriptions,
+matches a provided resume against each JD using NLP-based keyword and semantic analysis, and dynamically generates a tailored resume aligned to required skills. The system then recalculates a relevancy score
+for each generated resume to quantify alignment and improve job-specific targeting.
+
+Certifications
+• Google Cloud Digital Leader — Google Developer link
+• SQL Bootcamp — Udemy link
+• Certificate for Completion of Advanced Cpp, Python 3.4.3 Training — IIT Bombay (2022) link
+• Smart Internz Externship — Google Developers link
+• E-Bussiness — NPTEL link
+
+
