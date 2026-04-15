@@ -74,9 +74,10 @@ The dataset is **publicly available on Kaggle** and is **not included in this re
 > https://www.kaggle.com/datasets/hadikp/resume-data-pdf
 
 **To reproduce the fine-tuning run:**
-1. Download the CSV from the Kaggle link above
-2. Place it at `Method - 1/data/resume_dataset.csv`
-3. Run `python finetune.py` — it auto-detects the file
+1. Download the complete 2GB dataset from the Kaggle link above
+2. Place it at any folder
+3. Run "python resume_extractor.py --dataset_path ./resume_dataset --output resumes.xlsx"
+4. Run `python finetune.py` — it auto-detects the file
 
 If the file is not present, `finetune.py` falls back to 5 hardcoded examples (one per training category) which are sufficient to verify the pipeline runs without reproducing the full training job.
 
