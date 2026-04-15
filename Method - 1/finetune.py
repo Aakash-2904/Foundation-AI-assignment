@@ -202,9 +202,8 @@ development from CUDA kernels to production TensorRT deployment.
 
 
 def build_dataset() -> Dataset:
-    # I formatted each sample using Phi-3's exact chat template (<|user|>...<|end|>)
-    # because using the wrong template format causes inconsistent generation at inference time.
-    formatted = []
+# I used Phi-3 chat format here (important for output)
+# wrong format was giving weird outputs earlier so fixed it   
     for s in RESUME_SAMPLES:
         text = (
             f"<|user|>\n"
@@ -217,9 +216,8 @@ def build_dataset() -> Dataset:
 
 
 def train():
-    # I used unsloth's FastLanguageModel instead of vanilla HF PEFT cause
-    # it gives ~2x faster training and 60% less VRAM via custom CUDA kernels.
-    from unsloth import FastLanguageModel
+# using unsloth model instead of HF PEFT
+# felt faster + uses less VRAM in my runs  
     from trl import SFTTrainer
     from transformers import TrainingArguments
 
@@ -235,7 +233,7 @@ def train():
     model = FastLanguageModel.get_peft_model(
         model,
         r               = LORA_R,
-        # we target all projection layers — attention + MLP — for best instruction-following
+        # we target most layers (attention + mlp) so it learns better
         target_modules  = ["q_proj", "k_proj", "v_proj", "o_proj",
                            "gate_proj", "up_proj", "down_proj"],
         lora_alpha      = LORA_ALPHA,
@@ -309,9 +307,9 @@ PARAMETER num_ctx 4096
         capture_output=True, text=True,
     )
     if result.returncode == 0:
-        print(f"[Export] ✓ Model '{OLLAMA_MODEL}' ready — run: ollama run {OLLAMA_MODEL}")
+        print(f"[Export]Model '{OLLAMA_MODEL}' ready — run: ollama run {OLLAMA_MODEL}")
     else:
-        print(f"[Export] ✗ Ollama registration failed:\n{result.stderr}")
+        print(f"[Export]Ollama registration failed:\n{result.stderr}")
         print(f"         Manual: ollama create {OLLAMA_MODEL} -f {modelfile_path}")
 
 
@@ -320,5 +318,5 @@ if __name__ == "__main__":
     model, tokenizer = train()
     export_to_ollama(model, tokenizer)
     print(f"\n[Done]  Adapter : {OUTPUT_DIR}")
-    print(f"        GGUF    : {GGUF_DIR}")
-    print(f"        Ollama  : ollama run {OLLAMA_MODEL}")
+    print(f"GGUF    : {GGUF_DIR}")
+    print(f"Ollama  : ollama run {OLLAMA_MODEL}")
