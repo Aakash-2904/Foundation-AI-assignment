@@ -7,7 +7,7 @@ try:
     from sentence_transformers import SentenceTransformer
     from sklearn.metrics.pairwise import cosine_similarity as _cos_sim
 
-    # we are using all-MiniLM-L6-v2 embedding model which is 80 MB cause it is fast nd accurate for semantic similarity.
+# we are using all-MiniLM-L6-v2 cause it is small and  faster for embeddings
     _EMBED_MODEL = SentenceTransformer("all-MiniLM-L6-v2")
     COSINE_AVAILABLE = True
     print("[Cosine] sentence-transformers loaded — cosine similarity enabled.")
@@ -16,7 +16,7 @@ except ImportError:
     print("[Cosine] sentence-transformers not found — cosine similarity will be N/A.")
     print("         Install with:  pip install sentence-transformers scikit-learn numpy")
 
-# CONFIG
+# config
 DEFAULT_EXCEL  = "jobs_output.xlsx"       # Excel file scraped by the job scraper
 OUTPUT_DIR     = "tailored_resumes_ollama_5"  # where all the .tex files will land
 DEFAULT_MAX    = 20                        # cap on how many jobs to process in one run
@@ -29,10 +29,9 @@ COL_TAGS = "Tags / Skills"
 COL_QUALS = "Qualifications"
 COL_RESP = "Responsibilities"
 
-# PROMPTS
-# The system prompt is the "instruction manual" we hand to the model.
-# It defines exactly what JSON shape we expect back, and lays down
-# strict rules so the model doesn't hallucinate metrics or drop skills.
+# prompts
+# this is the main instruction we give model
+#  defines output format (json) trying to avoid wrong data or missing skills
 SYSTEM_META = """\
 You are an expert ATS resume tailor. Return your response as plain KEY: VALUE lines — no JSON, no markdown, no brackets, no quotes, no explanation.
 
@@ -253,7 +252,7 @@ def build_latex(d: dict) -> str:
 
 
 def fallback_latex(base_resume: str, job: dict, reason: str) -> str:
-# safely returns 
+# safe return
     def e(s):
         for c in "&%$#_{}~^":
             s = s.replace(c, f"\\{c}")
@@ -286,7 +285,7 @@ def load_jobs(path: str) -> list[dict]:
 
 def safe_filename(idx: int, company: str, title: str) -> str:
     def slug(s):
-        # Strip special characters, lowercase, replace spaces with underscores, truncate
+# cleaning text (lowercase + remove special chars)
         s = re.sub(r"[^\w\s-]", "", str(s).lower())
         return re.sub(r"[\s_-]+", "_", s).strip("_")[:30]
     return f"job_{idx:03d}_{slug(company)}_{slug(title)}.tex"
@@ -477,15 +476,12 @@ class OllamaResumeAgent:
         avg_cos    = (sum(r["cosine_sim"] for r in cos_scored) / len(cos_scored)
                       if cos_scored else None)
 
-        print(f"\n{'═'*60}")
         print(f"Done!  {len(results)} .tex files in '{out_dir}/'")
         print(f"Avg match score   : {avg:.1f}/100  (LLM self-report)")
         if avg_cos is not None:
             print(f"Avg cosine sim    : {avg_cos:.4f}  (semantic overlap, 0–1)")
-            # Print a per-job cosine similarity table for quick comparison
-            print(f"\n{'─'*60}")
+            # # print similarity scores per job
             print(f"  {'#':>3}  {'Cosine':>8}  {'LLM Score':>10}  Title")
-            print(f"{'─'*60}")
             for r in results:
                 cos = r.get("cosine_sim", "N/A")
                 cos_str = f"{cos:.4f}" if isinstance(cos, float) else str(cos)
@@ -493,11 +489,10 @@ class OllamaResumeAgent:
                 ms_str = f"{ms:>3}/100" if isinstance(ms, int) else f"{'N/A':>6}"
                 print(f"  {r['index']:>3}  {cos_str:>8}  {ms_str:>10}  "
                       f"{r['title'][:38]}")
-            print(f"{'─'*60}")
         else:
             print(f"Cosine sim        : N/A (sentence-transformers not installed)")
         print(f"Time              : {elapsed:.1f}s")
-        print(f"{'═'*60}")
+        print("\n")
 
 
         manifest = out_dir / "_manifest.json"
@@ -560,7 +555,7 @@ def save_results_excel(results: list[dict], out_path: str) -> None:
         (".tex File",           48,  "file"),
     ]
 
-    #  Header row 
+# header
     hdr_font  = Font(name="Arial", bold=True, color=HDR_FG, size=11)
     hdr_fill  = PatternFill("solid", start_color=HDR_BG)
     hdr_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
@@ -577,7 +572,7 @@ def save_results_excel(results: list[dict], out_path: str) -> None:
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = f"A1:{get_column_letter(len(COLUMNS))}1"
 
-    #  Data rows 
+    # rows 
     data_font  = Font(name="Arial", size=10)
     bold_font  = Font(name="Arial", size=10, bold=True)
     ctr_align  = Alignment(horizontal="center", vertical="center")
@@ -587,7 +582,7 @@ def save_results_excel(results: list[dict], out_path: str) -> None:
         bg       = EVEN_BG if ri % 2 == 0 else ODD_BG
         row_fill = PatternFill("solid", start_color=bg)
 
-        # Flatten keywords list comma-separated string
+# flatten keywords list
         kw_raw = r.get("keywords", [])
         if isinstance(kw_raw, list):
             kw_str   = ", ".join(str(k) for k in kw_raw)
@@ -596,8 +591,8 @@ def save_results_excel(results: list[dict], out_path: str) -> None:
             kw_str   = str(kw_raw)
             kw_count = 0
 
-        # Build the value dict for this row
-        row_data = {
+# build dict for row
+            row_data = {
             "index":       r.get("index", ri - 1),
             "title":       r.get("title",       "N/A"),
             "company":     r.get("company",     "N/A"),
@@ -663,14 +658,14 @@ def save_results_excel(results: list[dict], out_path: str) -> None:
 
 
 COMPILE_HELP = """
-  ── COMPILE .tex → PDF ────────────────────────────────────────────
+   COMPILE .tex to PDF 
   Install MacTeX (one time):   brew install --cask mactex-no-gui
   Compile one:   pdflatex tailored_resumes/job_001_*.tex
   Compile all:
     for f in tailored_resumes/*.tex; do
       pdflatex -output-directory tailored_resumes "$f"
     done
-  ──────────────────────────────────────────────────────────────────
+  
 """
 
 def main():
