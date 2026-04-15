@@ -14,6 +14,7 @@ BASE_MODEL = "unsloth/Phi-3-mini-4k-instruct-bnb-4bit"
 OUTPUT_DIR = Path("./phi3_resume_lora")
 GGUF_DIR = Path("./phi3_resume_gguf")
 OLLAMA_MODEL = "resume-generator"
+DATASET_PATH = Path("./dataset/resume_dataset.csv") #processed the entire 3K+ resumes into resume_Dataset.csv
 
 MAX_SEQ_LEN = 512 # didnt want too long seq (memory issue)
 USE_4BIT = True   # helps reduce VRAM
@@ -26,6 +27,26 @@ GRAD_ACCUM = 4 # using grad accum to kinda simulate bigger batch
 # might need to tune this later
 
 LR = 2e-4
+
+def load_kaggle_dataset(path: Path) -> list[dict]:
+    if not path.exists():
+        print(f"[Dataset] Kaggle CSV not found at '{path}' — using hardcoded fallback samples.")
+        return []
+ 
+    df = pd.read_csv(path)
+    print(f"[Dataset] Loaded {len(df)} rows from '{path}'")
+ 
+    samples = []
+    for _, row in df.iterrows():
+        if pd.notna(row.get("instruction")) and pd.notna(row.get("output")):
+            samples.append({
+                "instruction": str(row["instruction"]),
+                "input":       str(row.get("input", "")),
+                "output":      str(row["output"]),
+            })
+ 
+    print(f"[Dataset] {len(samples)} valid instruction-output pairs extracted.")
+    return samples
 
 
 # I made samples in instruction-input-output format, so model learns how to map job desc to resume
@@ -198,13 +219,135 @@ development from CUDA kernels to production TensorRT deployment.
 \end{document}
 """,
     },
+     {
+        "instruction": (
+            "You are an expert resume writer. "
+            "Given the job description and the candidate's profile, "
+            "generate a complete, ATS-optimised LaTeX resume. "
+            "Use the moderncv class. Return ONLY valid LaTeX, no explanation."
+        ),
+        "input": (
+            "Job: Senior DevOps Engineer at CloudOps Inc.\n"
+            "Requirements: Kubernetes, Terraform, CI/CD pipelines, AWS, "
+            "Docker, Prometheus, Grafana, SRE mindset, 4+ years experience.\n\n"
+            "Profile: Sam Rivera, sam@devops.io, "
+            "3 years DevOps at ScaleUp (Kubernetes, Terraform, Jenkins, AWS), "
+            "BSc Computer Engineering UT Austin, "
+            "reduced deployment failures by 70% via blue-green deployments, "
+            "skills: Kubernetes, Docker, Terraform, AWS, Jenkins, Prometheus, Python, Bash."
+        ),
+        "output": r"""
+\documentclass[11pt,a4paper,sans]{moderncv}
+\moderncvstyle{banking}
+\moderncvcolor{blue}
+\usepackage[scale=0.85]{geometry}
+ 
+\name{Sam}{Rivera}
+\email{sam@devops.io}
+\social[github]{samrivera-devops}
+ 
+\begin{document}
+\makecvtitle
+ 
+\section{Summary}
+Senior DevOps Engineer with 3+ years building resilient CI/CD pipelines and
+cloud-native infrastructure on AWS. Reduced deployment failures by 70\% through
+blue-green deployments and automated rollback strategies.
+ 
+\section{Experience}
+\cventry{2021--Present}{DevOps Engineer}{ScaleUp}{Austin, TX}{}{
+  \begin{itemize}
+    \item Orchestrated 200+ microservices on Kubernetes, achieving 99.95\% uptime SLA
+    \item Automated infrastructure provisioning with Terraform, cutting setup time by 60\%
+    \item Built Prometheus and Grafana observability stack, reducing MTTR from 45 to 8 minutes
+  \end{itemize}
+}
+ 
+\section{Education}
+\cventry{2017--2021}{BSc Computer Engineering}{UT Austin}{}{}{}
+ 
+\section{Skills}
+\cvitem{Orchestration}{Kubernetes, Helm, Docker, containerd}
+\cvitem{IaC}{Terraform, Ansible, CloudFormation}
+\cvitem{Cloud}{AWS (EC2, EKS, RDS, S3), IAM}
+\cvitem{CI/CD}{Jenkins, GitHub Actions, ArgoCD}
+\cvitem{Observability}{Prometheus, Grafana, ELK Stack}
+ 
+\end{document}
+""",
+    },
+     {
+        "instruction": (
+            "You are an expert resume writer. "
+            "Given the job description and the candidate's profile, "
+            "generate a complete, ATS-optimised LaTeX resume. "
+            "Use the moderncv class. Return ONLY valid LaTeX, no explanation."
+        ),
+        "input": (
+            "Job: Full-Stack Developer at ProductCo.\n"
+            "Requirements: React, Node.js, TypeScript, PostgreSQL, REST APIs, "
+            "AWS deployment, agile team experience.\n\n"
+            "Profile: Maya Chen, maya@dev.io, "
+            "2 years full-stack at WebAgency (React, Node.js, PostgreSQL, AWS), "
+            "BSc Software Engineering Georgia Tech, "
+            "built e-commerce platform serving 50K monthly users, "
+            "skills: React, TypeScript, Node.js, PostgreSQL, Redis, Docker, AWS."
+        ),
+        "output": r"""
+\documentclass[11pt,a4paper,sans]{moderncv}
+\moderncvstyle{banking}
+\moderncvcolor{burgundy}
+\usepackage[scale=0.85]{geometry}
+ 
+\name{Maya}{Chen}
+\email{maya@dev.io}
+\social[github]{mayachen-dev}
+ 
+\begin{document}
+\makecvtitle
+ 
+\section{Summary}
+Full-Stack Developer with 2 years building React and Node.js applications at
+production scale. Delivered e-commerce platform serving 50K monthly users with
+sub-200ms REST API response times on AWS.
+ 
+\section{Experience}
+\cventry{2022--Present}{Full-Stack Developer}{WebAgency}{Atlanta, GA}{}{
+  \begin{itemize}
+    \item Built React/TypeScript storefront processing \$2M+ in annual transactions
+    \item Designed Node.js REST API backed by PostgreSQL; query latency reduced by 45\%
+    \item Deployed containerised stack on AWS ECS with zero-downtime rolling updates
+  \end{itemize}
+}
+ 
+\section{Education}
+\cventry{2018--2022}{BSc Software Engineering}{Georgia Tech}{}{GPA 3.7/4.0}{}
+ 
+\section{Skills}
+\cvitem{Frontend}{React, TypeScript, Next.js, Tailwind CSS}
+\cvitem{Backend}{Node.js, Express, REST, GraphQL}
+\cvitem{Data}{PostgreSQL, Redis, Prisma ORM}
+\cvitem{DevOps}{Docker, AWS (ECS, RDS, S3), GitHub Actions}
+ 
+\end{document}
+""",
+    },
 ]
 
 
 def build_dataset() -> Dataset:
 # I used Phi-3 chat format here (important for output)
 # wrong format was giving weird outputs earlier so fixed it   
-    for s in RESUME_SAMPLES:
+ formatted = []
+ 
+    # prefer the full Kaggle dataset if it's available locally
+    samples = load_kaggle_dataset(DATASET_PATH)
+    if not samples:
+        # CSV not found — use the 5 hardcoded fallback examples instead
+        samples = RESUME_SAMPLES_FALLBACK
+        print(f"[Dataset] Using {len(samples)} hardcoded fallback examples (one per category).")
+ 
+    for s in samples:
         text = (
             f"<|user|>\n"
             f"{s['instruction']}\n\n"
@@ -212,6 +355,8 @@ def build_dataset() -> Dataset:
             f"<|assistant|>\n{s['output'].strip()}<|end|>"
         )
         formatted.append({"text": text})
+ 
+    print(f"[Dataset] Final training set size: {len(formatted)} examples")
     return Dataset.from_list(formatted)
 
 
