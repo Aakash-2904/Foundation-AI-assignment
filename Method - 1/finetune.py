@@ -1,7 +1,6 @@
 
-# I chose Phi-3 mini (3.8B) over llama3 for fine-tuning because it fits in
-# ~6GB VRAM with 4-bit QLoRA, trains faster, and exports to a lighter GGUF.
-
+# I picked Phi-3 mini instead of llama3 mainly bcz it fits in ~6GB VRAM with 4-bit
+# also faster to train and easier to export
 
 import json
 import os
@@ -10,27 +9,27 @@ from pathlib import Path
 from datasets import Dataset
 
 
-# ── Config ──────────────────────────────────────────────────────────────────
+#  Config 
 BASE_MODEL = "unsloth/Phi-3-mini-4k-instruct-bnb-4bit"
 OUTPUT_DIR = Path("./phi3_resume_lora")
 GGUF_DIR = Path("./phi3_resume_gguf")
 OLLAMA_MODEL = "resume-generator"
 
-MAX_SEQ_LEN = 512
-USE_4BIT = True   # keeps VRAM under 6GB during training
+MAX_SEQ_LEN = 512 # didnt want too long seq (memory issue)
+USE_4BIT = True   # helps reduce VRAM
 LORA_R = 16
 LORA_ALPHA = 32     
 LORA_DROPOUT = 0.05
-TRAIN_EPOCHS = 3
-BATCH_SIZE = 1
-GRAD_ACCUM = 4
+TRAIN_EPOCHS = 3 # not sure if 3 epochs enough, worked ok in test
+BATCH_SIZE = 1 # batching is small bcz GPU limit
+GRAD_ACCUM = 4 # using grad accum to kinda simulate bigger batch
+# might need to tune this later
+
 LR = 2e-4
-# ────────────────────────────────────────────────────────────────────────────
 
 
-# ── Training samples ─────────────────────────────────────────────────────────
-# I structured these as instruction-input-output triples covering different
-# ML/DS roles so the model learns the full range of resume types it might see.
+# I made samples in instruction-input-output format, so model learns how to map job desc to resume
+# tried to cover diff ML roles (not perfect tho)
 RESUME_SAMPLES = [
     {
         "instruction": (
