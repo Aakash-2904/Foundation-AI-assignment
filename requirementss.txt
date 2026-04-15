@@ -1,0 +1,14 @@
+transformers
+accelerate
+peft
+bitsandbytes
+unsloth
+numpy
+pandas
+pdfplumber
+pypdf
+requests
+sentence-transformers
+scikit-learn
+tqdm
+torch
