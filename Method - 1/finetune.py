@@ -1,17 +1,7 @@
-"""
-finetune.py
------------
-One-time fine-tuning step — trains Phi-3 mini with LoRA on resume examples,
-exports as GGUF, and registers it with Ollama as 'resume-generator'.
 
-I chose Phi-3 mini (3.8B) over llama3 for fine-tuning because it fits in
-~6GB VRAM with 4-bit QLoRA, trains faster, and exports to a lighter GGUF.
+# I chose Phi-3 mini (3.8B) over llama3 for fine-tuning because it fits in
+# ~6GB VRAM with 4-bit QLoRA, trains faster, and exports to a lighter GGUF.
 
-Requirements:
-    pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
-    pip install --no-deps trl peft accelerate bitsandbytes datasets
-    ollama must be running: `ollama serve`
-"""
 
 import json
 import os
@@ -21,20 +11,20 @@ from datasets import Dataset
 
 
 # ── Config ──────────────────────────────────────────────────────────────────
-BASE_MODEL    = "unsloth/Phi-3-mini-4k-instruct-bnb-4bit"
-OUTPUT_DIR    = Path("./phi3_resume_lora")
-GGUF_DIR      = Path("./phi3_resume_gguf")
-OLLAMA_MODEL  = "resume-generator"
+BASE_MODEL = "unsloth/Phi-3-mini-4k-instruct-bnb-4bit"
+OUTPUT_DIR = Path("./phi3_resume_lora")
+GGUF_DIR = Path("./phi3_resume_gguf")
+OLLAMA_MODEL = "resume-generator"
 
-MAX_SEQ_LEN   = 512
-USE_4BIT      = True   # keeps VRAM under 6GB during training
-LORA_R        = 16
-LORA_ALPHA    = 32     # I set alpha = 2 * r, which is the standard convention
-LORA_DROPOUT  = 0.05
-TRAIN_EPOCHS  = 3
-BATCH_SIZE    = 1
-GRAD_ACCUM    = 4
-LR            = 2e-4
+MAX_SEQ_LEN = 512
+USE_4BIT = True   # keeps VRAM under 6GB during training
+LORA_R = 16
+LORA_ALPHA = 32     
+LORA_DROPOUT = 0.05
+TRAIN_EPOCHS = 3
+BATCH_SIZE = 1
+GRAD_ACCUM = 4
+LR = 2e-4
 # ────────────────────────────────────────────────────────────────────────────
 
 
@@ -213,7 +203,7 @@ development from CUDA kernels to production TensorRT deployment.
 
 
 def build_dataset() -> Dataset:
-    # I format each sample using Phi-3's exact chat template (<|user|>...<|end|>)
+    # I formatted each sample using Phi-3's exact chat template (<|user|>...<|end|>)
     # because using the wrong template format causes inconsistent generation at inference time.
     formatted = []
     for s in RESUME_SAMPLES:
@@ -228,7 +218,7 @@ def build_dataset() -> Dataset:
 
 
 def train():
-    # I used unsloth's FastLanguageModel instead of vanilla HF PEFT because
+    # I used unsloth's FastLanguageModel instead of vanilla HF PEFT cause
     # it gives ~2x faster training and 60% less VRAM via custom CUDA kernels.
     from unsloth import FastLanguageModel
     from trl import SFTTrainer
@@ -246,7 +236,7 @@ def train():
     model = FastLanguageModel.get_peft_model(
         model,
         r               = LORA_R,
-        # I target all projection layers — attention + MLP — for best instruction-following
+        # we target all projection layers — attention + MLP — for best instruction-following
         target_modules  = ["q_proj", "k_proj", "v_proj", "o_proj",
                            "gate_proj", "up_proj", "down_proj"],
         lora_alpha      = LORA_ALPHA,
@@ -289,8 +279,7 @@ def train():
 
 
 def export_to_ollama(model, tokenizer):
-    # I export as Q4_K_M GGUF — best balance of size (~2GB), speed, and quality for 3.8B.
-    # Then I write an Ollama Modelfile and call `ollama create` to register it locally.
+    # we are exporting this model into our ollama
     GGUF_DIR.mkdir(parents=True, exist_ok=True)
     gguf_path = GGUF_DIR / "resume-generator.Q4_K_M.gguf"
 
@@ -328,9 +317,7 @@ PARAMETER num_ctx 4096
 
 
 if __name__ == "__main__":
-    print("=" * 60)
     print("  Phi-3 mini LoRA Fine-Tune for Resume Generation")
-    print("=" * 60)
     model, tokenizer = train()
     export_to_ollama(model, tokenizer)
     print(f"\n[Done]  Adapter : {OUTPUT_DIR}")
