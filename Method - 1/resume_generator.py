@@ -9,7 +9,7 @@ import pdfplumber
 import requests
 
 
-#  Config 
+#  config 
 OLLAMA_BASE_URL  = "http://localhost:11434"
 FINETUNED_MODEL  = "resume-generator"
 FALLBACK_MODEL   = "llama3"
@@ -67,12 +67,11 @@ LATEX_TEMPLATE = r"""\documentclass[10pt, letterpaper]{article}
 """
 
 
-#  PDF extraction 
-
+# pdf extraction
 def extract_resume_text(pdf_path: str) -> str:
-    # I used pdfplumber as the primary extractor because it preserves layout
-    # better than pypdf — important for multi-column resume formats. pypdf is the fallback.
-    pdf_path = Path(pdf_path)
+# I used pdfplumber first bcz layout stays better
+# pypdf is fallback if this fails
+  pdf_path = Path(pdf_path)
     if not pdf_path.exists():
         raise FileNotFoundError(f"Resume PDF not found: {pdf_path}")
 
@@ -96,8 +95,8 @@ def extract_resume_text(pdf_path: str) -> str:
 
 
 def parse_profile_fields(text: str) -> dict:
-    # I parse every fixed field directly from raw PDF text using regex so the LLM
-    # never touches them. This is the single fix for all duplication and missing-data bugs.
+    # I extract fields using regex from pdf text
+    # # this helped avoid missing/duplicate data issues
     lines = [l.strip() for l in text.splitlines() if l.strip()]
 
     name = lines[0] if lines else "Candidate Name"
@@ -297,7 +296,7 @@ def call_ollama(model: str, system: str, user_prompt: str, timeout: int = 120) -
         return ""
 
 
-#  Assembly 
+#  # assembling resume 
 
 def clean_llm_output(raw: str) -> str:
     """Strip markdown fences and any preamble/header the model added by mistake."""
@@ -330,7 +329,7 @@ def has_required_sections(latex: str) -> bool:
     return all(tag in latex for tag in [r"\documentclass", r"\begin{document}", r"\end{document}"])
 
 
-#  Compile 
+#  # compile latex 
 
 def compile_latex_to_pdf(latex: str, output_path: Path) -> bool:
     tex_path = output_path.with_suffix(".tex")
