@@ -14,7 +14,7 @@ def fetch_remotive_jobs(
     limit: int = 5,
 ) -> list[dict]:
 # I used the remotive pblic API here defaulting category to 'ML'
-# since this pipeline targets ML/DL roles, it Returns a normalised list of job dicts.
+# # mainly focusing on ML roles, returns job list
     params = {"limit": limit, "category": category}
     if search:
         params["search"] = search
@@ -45,7 +45,7 @@ def fetch_arbeitnow_jobs(
     search: Optional[str] = None,
     limit: int = 5,
 ) -> list[dict]:
-#I used Arbeitnow as a second source to widen the job pool beyond remote-only listings.
+## also using arbeitnow to get more jobs
     params = {}
     if search:
         params["q"] = search
@@ -76,7 +76,7 @@ def fetch_all_jobs(
     search: str = "machine learning engineer",
     limit_per_source: int = 5,
 ) -> list[dict]:
-    # I added a 0.5s sleep between calls on ordr to avoid ovrld.
+    # I added small sleep to avoid too many requests
     print(f"\n[Scraper] Fetching Remotive  jobs  (search='{search}') ...")
     remotive  = fetch_remotive_jobs(search=search, limit=limit_per_source)
     time.sleep(0.5)
@@ -90,8 +90,8 @@ def fetch_all_jobs(
 
 
 def _strip_html(html: str) -> str:
-    # I used regex here instead of BeautifulSoup — job descriptions only have basic inline HTML
-    # so a full parser is overkill. Also decodes common HTML entities for clean LLM input.
+    # used regex instead of bs4 (html is simple anyway)
+    # full parser felt unnecessary, also cleaning html chars
     text = re.sub(r"<[^>]+>", " ", html)
     for ent, repl in [("&nbsp;", " "), ("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"), ("&#39;", "'")]:
         text = text.replace(ent, repl)
