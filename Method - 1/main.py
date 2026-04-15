@@ -1,23 +1,9 @@
-"""
-main.py
--------
-CLI orchestrator — ties the scraper and generator together.
-I kept this file intentionally thin: all the real logic lives in
-scraper.py and resume_generator.py so this is purely wiring.
-
-Usage:
-    python main.py --resume path/to/your_resume.pdf --search "ML engineer"
-
-Run fine-tuning first for best results (one-time, ~1-2 hrs):
-    python finetune.py
-"""
-
 import argparse
 import sys
 from pathlib import Path
 
-from scraper           import fetch_all_jobs
-from resume_generator  import generate_resumes_for_jobs, print_summary, OUTPUT_DIR
+from scraper import fetch_all_jobs
+from resume_generator import generate_resumes_for_jobs, print_summary, OUTPUT_DIR
 
 
 def parse_args():
@@ -45,32 +31,29 @@ def main():
         print(f"[Error] Resume PDF not found: {resume_path}")
         sys.exit(1)
 
-    print("\n" + "=" * 60)
-    print("  LOCAL AI RESUME GENERATOR")
-    print("  Remotive + Arbeitnow  →  Ollama  →  LaTeX PDF")
-    print("=" * 60)
-    print(f"  Resume  : {resume_path}")
-    print(f"  Search  : {args.search}")
-    print(f"  Limit   : {args.limit} jobs/source  ({args.limit * 2} total max)")
-    print(f"  Output  : {args.outdir}")
-    print("=" * 60 + "\n")
+    print("\n")
+    print(f" Resume  : {resume_path}")
+    print(f"Search  : {args.search}")
+    print(f"Limit   : {args.limit} jobs/source  ({args.limit * 2} total max)")
+    print(f" Output  : {args.outdir}")
+    print("\n")
 
-    # Step 1 — scrape jobs from both sources
+    # 1 scrape jobs from both sources
     jobs = fetch_all_jobs(search=args.search, limit_per_source=args.limit)
     if not jobs:
-        print("[Error] No jobs fetched. Check your internet connection.")
+        print("[Error] no hob ftchd. check your net.")
         sys.exit(1)
 
-    print(f"[Pipeline] {len(jobs)} jobs fetched. Starting resume generation ...\n")
+    print(f"[Pipeline] {len(jobs)} jobs ftchd. strting resume genr \n")
 
-    # Step 2 — generate one tailored resume per job
+    #2 genrte  1 tailored resume per job
     results = generate_resumes_for_jobs(
         jobs           = jobs,
         resume_pdf_path= str(resume_path),
         output_dir     = Path(args.outdir),
     )
 
-    # Step 3 — print a clean summary of what was produced
+    #3 printing a clean summ of what was produced
     print_summary(results)
 
 
