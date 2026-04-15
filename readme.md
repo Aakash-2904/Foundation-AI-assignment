@@ -27,19 +27,19 @@ The central finding is a **generalization-quality tradeoff**: Method 1 produces 
 
 ```
 .
+.
 ├── Method - 1/
-│   ├── finetune.py          # QLoRA fine-tuning of Phi-3 mini via unsloth
-│   ├── main.py              # CLI entry point — scrape + generate in one command
-│   ├── resume_generator.py  # Ollama inference + LaTeX assembly + PDF compilation
-│   ├── scraper.py           # Job listing fetcher (Remotive + Arbeitnow APIs)
-│   ├── my_resume.txt        # Candidate profile used for evaluation
-│   └── jobs_output.xlsx     # Pre-scraped job listings (20 jobs, 6 role types)
+│   ├── finetune.py
+│   ├── main.py
+│   ├── resume_generator.py
+│   └── resume_extractor.py
 │
 ├── Method - 2/
-│   ├── agent.py             # Full agentic pipeline — extraction, LaTeX build, metrics
-│   ├── my_resume.txt        # Candidate profile (same as Method 1)
-│   └── jobs_output.xlsx     # Same pre-scraped job listings for controlled comparison
+│   └── agent.py
 │
+├── scraper.py
+├── my_resume.txt
+├── jobs_output.xlsx
 ├── requirements.txt
 └── README.md
 ```
