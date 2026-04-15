@@ -1,19 +1,13 @@
 import os, re, sys, time, json, argparse, textwrap
-# json is still used for writing the _manifest.json file — not for parsing model output
 from pathlib import Path
 import openpyxl
 import ollama
-
-# ── Cosine similarity (sentence-transformers + sklearn) ──────────────
-# Install once:  pip install sentence-transformers scikit-learn numpy
-# If not installed the pipeline still runs — cosine_sim will be "N/A".
 try:
     import numpy as np
     from sentence_transformers import SentenceTransformer
     from sklearn.metrics.pairwise import cosine_similarity as _cos_sim
 
-    # Loaded once at import time and reused for every job in the batch.
-    # all-MiniLM-L6-v2 is 80 MB, fast, and accurate for semantic similarity.
+    # we are using all-MiniLM-L6-v2 embedding model which is 80 MB cause it is fast nd accurate for semantic similarity.
     _EMBED_MODEL = SentenceTransformer("all-MiniLM-L6-v2")
     COSINE_AVAILABLE = True
     print("[Cosine] sentence-transformers loaded — cosine similarity enabled.")
@@ -22,32 +16,20 @@ except ImportError:
     print("[Cosine] sentence-transformers not found — cosine similarity will be N/A.")
     print("         Install with:  pip install sentence-transformers scikit-learn numpy")
 
-# ════════════════════════════════════════════════════════════════════
 # CONFIG
-# Central place to change model name, folder paths, or column headers
-# without hunting through the rest of the file.
-# ════════════════════════════════════════════════════════════════════
-
 DEFAULT_EXCEL  = "jobs_output.xlsx"       # Excel file scraped by the job scraper
 OUTPUT_DIR     = "tailored_resumes_ollama_5"  # where all the .tex files will land
 DEFAULT_MAX    = 20                        # cap on how many jobs to process in one run
 DEFAULT_MODEL  = "llama3.2"               # Ollama model to use (swap for mistral, phi3, etc.)
 
-# These must match the column headers in the Excel sheet exactly
-COL_TITLE   = "Position Title"
+COL_TITLE = "Position Title"
 COL_COMPANY = "Company"
-COL_JD      = "Full Job Description"
-COL_TAGS    = "Tags / Skills"
-COL_QUALS   = "Qualifications"
-COL_RESP    = "Responsibilities"
+COL_JD = "Full Job Description"
+COL_TAGS = "Tags / Skills"
+COL_QUALS = "Qualifications"
+COL_RESP = "Responsibilities"
 
-# ════════════════════════════════════════════════════════════════════
 # PROMPTS
-# We ask the model for plain JSON only — never LaTeX.
-# Python builds all the LaTeX later from the structured data.
-# This way, LaTeX errors caused by the model are eliminated entirely.
-# ════════════════════════════════════════════════════════════════════
-
 # The system prompt is the "instruction manual" we hand to the model.
 # It defines exactly what JSON shape we expect back, and lays down
 # strict rules so the model doesn't hallucinate metrics or drop skills.
@@ -115,12 +97,7 @@ CONTENT RULES:
 
 
 def _jd(job: dict, limit: int = 2000) -> str:
-    """
-    Concatenate all the job-related columns into one block of text.
-    Capped at 2000 characters — long JDs (like A.Team's) push the model
-    to produce verbose JSON that frequently breaks formatting. The first
-    2000 characters contain the most signal anyway (requirements, skills).
-    """
+
     return "\n".join(filter(None, [
         str(job.get(COL_JD,    "") or ""),
         str(job.get(COL_QUALS, "") or ""),
@@ -130,11 +107,6 @@ def _jd(job: dict, limit: int = 2000) -> str:
 
 
 def meta_prompt(base_resume: str, job: dict) -> str:
-    """
-    Build the user-turn message that gets sent to the model.
-    It's deliberately short and structured — job at the top,
-    then the candidate's base resume as context below.
-    """
     return (
         f"JOB TITLE : {job.get(COL_TITLE,  'N/A')}\n"
         f"COMPANY   : {job.get(COL_COMPANY, 'N/A')}\n\n"
@@ -142,12 +114,8 @@ def meta_prompt(base_resume: str, job: dict) -> str:
         f"BASE RESUME:\n{base_resume}"
     )
 
-# ════════════════════════════════════════════════════════════════════
-# LATEX BUILDER
-# The model never writes LaTeX — it only supplies structured data.
-# All LaTeX is assembled here in Python, which means no escaping bugs
-# or malformed environments sneaking in from the model's output.
-# ════════════════════════════════════════════════════════════════════
+# lat buildr
+
 
 def esc(s: str) -> str:
     """
@@ -174,21 +142,12 @@ def esc(s: str) -> str:
 
 
 def build_latex(d: dict) -> str:
-    """
-    Assemble a compilable LaTeX resume from the flat JSON dict the model returns.
-
-    The schema is now flat — no nested arrays of objects — so bullet lists
-    arrive as pipe-separated strings (e.g. "built X | improved Y | reduced Z").
-    This function splits on " | " to reconstruct the lists, then renders each
-    section using the same article-class preamble as before.
-    """
 
     def section(title: str) -> str:
         return f"\n\\section*{{{title}}}\n"
 
     def split_pipes(s: str) -> list[str]:
-        # Split a pipe-separated string into a list, stripping whitespace.
-        # Returns an empty list for blank/missing values.
+
         if not s or not str(s).strip():
             return []
         return [p.strip() for p in str(s).split("|") if p.strip()]
@@ -201,7 +160,6 @@ def build_latex(d: dict) -> str:
 
     lines = []
 
-    # ── Preamble ─────────────────────────────────────────────────────
     lines.append(r"\documentclass[10pt]{article}")
     lines.append(r"\usepackage[top=0.5in, bottom=0.5in, left=0.65in, right=0.65in]{geometry}")
     lines.append(r"\usepackage[T1]{fontenc}")
@@ -215,7 +173,6 @@ def build_latex(d: dict) -> str:
     lines.append(r"\begin{document}")
     lines.append("")
 
-    # ── Header ───────────────────────────────────────────────────────
     name    = esc(d.get("name",    "Candidate Name"))
     contact = esc(d.get("contact", ""))
     lines.append(r"\begin{center}")
@@ -224,15 +181,11 @@ def build_latex(d: dict) -> str:
     lines.append(r"\end{center}")
     lines.append(r"\vspace{4pt}")
 
-    # ── Summary ──────────────────────────────────────────────────────
     summary = d.get("summary", "")
     if summary:
         lines.append(section("Professional Summary"))
         lines.append(esc(summary))
         lines.append("")
-
-    # ── Skills ───────────────────────────────────────────────────────
-    # Flat schema uses skill_cat_N / skill_items_N pairs for up to 6 categories.
     skill_lines = []
     for n in range(1, 7):
         cat   = d.get(f"skill_cat_{n}",   "")
@@ -245,9 +198,6 @@ def build_latex(d: dict) -> str:
         lines.extend(skill_lines)
         lines.append(r"\end{itemize}")
         lines.append("")
-
-    # ── Experience ───────────────────────────────────────────────────
-    # Flat schema uses exp1_*, exp2_*, exp3_* for up to 3 roles.
     exp_added = False
     for n in range(1, 4):
         title    = d.get(f"exp{n}_title",    "")
@@ -263,9 +213,6 @@ def build_latex(d: dict) -> str:
         lines.append(f"\\textbf{{{esc(title)}}} \\hfill \\textit{{{esc(dates)}}}")
         lines.append(f"\\textit{{{esc(company)}, {esc(location)}}}")
         lines.append(itemize(bullets))
-
-    # ── Education ────────────────────────────────────────────────────
-    # Flat schema uses edu1_*, edu2_* for up to 2 entries.
     edu_added = False
     for n in range(1, 3):
         degree = d.get(f"edu{n}_degree",      "")
@@ -284,8 +231,6 @@ def build_latex(d: dict) -> str:
             lines.append(esc(detail))
         lines.append("")
 
-    # ── Projects ─────────────────────────────────────────────────────
-    # Flat schema uses proj1_*, proj2_*, proj3_* for up to 3 projects.
     proj_added = False
     for n in range(1, 4):
         pname   = d.get(f"proj{n}_name",    "")
@@ -298,8 +243,6 @@ def build_latex(d: dict) -> str:
         lines.append(f"\\textbf{{{esc(pname)}}}")
         lines.append(itemize(bullets))
 
-    # ── Certifications ───────────────────────────────────────────────
-    # Flat schema returns certs as a pipe-separated string.
     certs = split_pipes(d.get("certifications", ""))
     if certs:
         lines.append(section("Certifications"))
@@ -310,15 +253,8 @@ def build_latex(d: dict) -> str:
 
 
 def fallback_latex(base_resume: str, job: dict, reason: str) -> str:
-    """
-    If the model returns broken JSON or something unexpected happens,
-    we still need to write *something* to disk rather than crashing.
-    This fallback embeds the raw resume text in a minimal LaTeX doc
-    and leaves a comment explaining why the tailoring failed.
-    The candidate can then fix it manually or rerun just that job.
-    """
+# safely returns 
     def e(s):
-        # Lightweight escaper — just enough to avoid LaTeX breaking on common symbols
         for c in "&%$#_{}~^":
             s = s.replace(c, f"\\{c}")
         return s
@@ -332,33 +268,21 @@ def fallback_latex(base_resume: str, job: dict, reason: str) -> str:
         + e(base_resume[:3000]) + "\n\n\\end{document}\n"
     )
 
-# ════════════════════════════════════════════════════════════════════
-# EXCEL READER
-# Reads the job listings spreadsheet produced by the scraper.
-# Only rows that have both a title and a job description are loaded —
-# incomplete rows are silently skipped to avoid processing empty jobs.
-# ════════════════════════════════════════════════════════════════════
 
 def load_jobs(path: str) -> list[dict]:
     wb = openpyxl.load_workbook(path)
-    ws = wb["Jobs"]   # sheet must be named "Jobs"
+    ws = wb["Jobs"]   
     headers = [c.value for c in ws[1]]   # first row = column names
     jobs = []
     for row in ws.iter_rows(min_row=2, values_only=True):
-        # Map each cell value to its column header, defaulting to "" for missing cells
         job = {headers[i]: (row[i] if i < len(row) and row[i] is not None else "")
                for i in range(len(headers))}
-        # Skip rows that are missing the two fields we absolutely need
         if job.get(COL_TITLE) and job.get(COL_JD):
             jobs.append(job)
     print(f"Loaded {len(jobs)} jobs from '{path}'")
     return jobs
 
-# ════════════════════════════════════════════════════════════════════
-# FILENAME HELPER
-# Builds a safe, human-readable filename for each .tex output file.
-# e.g.  job_007_google_senior_ml_engineer.tex
-# ════════════════════════════════════════════════════════════════════
+
 
 def safe_filename(idx: int, company: str, title: str) -> str:
     def slug(s):
@@ -367,36 +291,13 @@ def safe_filename(idx: int, company: str, title: str) -> str:
         return re.sub(r"[\s_-]+", "_", s).strip("_")[:30]
     return f"job_{idx:03d}_{slug(company)}_{slug(title)}.tex"
 
-# ════════════════════════════════════════════════════════════════════
-# COSINE SIMILARITY HELPER
-# Computes semantic similarity between the tailored resume text and the
-# job description using sentence embeddings.
-#
-# Why cosine similarity on top of the LLM match_score?
-#   - match_score is the model's self-reported confidence (subjective).
-#   - cosine_sim is an independent, objective measurement of how much
-#     the vocabulary and meaning of the resume overlaps with the JD.
-# Together they give a more complete picture of resume-JD alignment.
-# ════════════════════════════════════════════════════════════════════
 
 def compute_cosine_similarity(resume_text: str, jd_text: str) -> float | str:
-    """
-    Returns a float 0.0–1.0 representing the semantic cosine similarity
-    between the tailored resume and the job description.
-    Returns "N/A" if sentence-transformers is not installed.
-
-    The function encodes both texts into 384-dimensional dense vectors
-    using all-MiniLM-L6-v2, then computes the cosine of the angle
-    between them. A score of 1.0 means identical meaning; 0.0 means
-    completely unrelated.
-    """
     if not COSINE_AVAILABLE:
         return "N/A"
     if not resume_text or not jd_text:
         return "N/A"
     try:
-        # Truncate to 512 tokens worth of text (model's max input length)
-        # to avoid silent truncation inside the encoder.
         r_text = resume_text[:3000]
         j_text = jd_text[:3000]
         embeddings = _EMBED_MODEL.encode([r_text, j_text], show_progress_bar=False)
@@ -406,13 +307,7 @@ def compute_cosine_similarity(resume_text: str, jd_text: str) -> float | str:
         print(f"[Cosine] Error computing similarity: {e}")
         return "N/A"
 
-
-# ════════════════════════════════════════════════════════════════════
-# OLLAMA AGENT
-# The core class that ties everything together.
-# It checks Ollama is running, calls the model, parses the response,
-# and writes the final .tex file — one per job listing.
-# ════════════════════════════════════════════════════════════════════
+# ollama
 
 class OllamaResumeAgent:
 
@@ -421,31 +316,22 @@ class OllamaResumeAgent:
         self._check_ollama()   # fail fast if Ollama isn't running or model isn't pulled
 
     def _check_ollama(self):
-        """
-        Verify that the Ollama daemon is reachable and the requested
-        model is available locally. Exit immediately with a helpful
-        message if either check fails — better than a cryptic error mid-run.
-        """
+# verification 
         try:
             models    = [m.model for m in ollama.list().models]
             available = [m.split(":")[0] for m in models]
             wanted    = self.model.split(":")[0]
             if wanted not in available:
                 print(f"\nModel '{self.model}' not found. Available: {available}")
-                print(f"   Run:  ollama pull {self.model}")
+                print(f"Run:ollama pull {self.model}")
                 sys.exit(1)
-            print(f"Ollama ready — model: {self.model}")
+            print(f"Ollama ready model: {self.model}")
         except Exception as e:
             print(f"\nCannot connect to Ollama: {e}")
-            print("   Run:  ollama serve")
+            print("Run: ollama serve")
             sys.exit(1)
 
     def _call(self, system: str, user: str) -> str:
-        """
-        Single-turn chat call to the local Ollama model.
-        Temperature is kept low (0.2) for deterministic, structured output —
-        we don't want the model getting creative with JSON keys.
-        """
         resp = ollama.chat(
             model=self.model,
             messages=[
@@ -458,20 +344,6 @@ class OllamaResumeAgent:
 
     @staticmethod
     def _parse_kv(raw: str) -> dict:
-        """
-        Parse the model's KEY: VALUE plain-text response into a dict.
-
-        This format is chosen specifically because llama3.2 cannot break it:
-        - No brackets, quotes, or commas at the structural level
-        - A newline always means "new key" — it is NEVER inside a value
-        - If the model accidentally wraps a long line, we detect continuation
-          lines (lines with no known key prefix) and append them to the
-          previous value, so even wrapped output is recovered correctly.
-
-        Known keys are the exact set from SYSTEM_META. Any line that starts
-        with one of these keys followed by ': ' is a new field. All other
-        lines are treated as continuations of the previous field.
-        """
         KNOWN_KEYS = {
             "name", "contact", "summary",
             "skill_cat_1", "skill_items_1",
@@ -500,7 +372,6 @@ class OllamaResumeAgent:
             if not line:
                 continue
 
-            # Check if this line starts a new known key
             matched = False
             for key in KNOWN_KEYS:
                 if line.lower().startswith(key + ":"):
@@ -510,11 +381,9 @@ class OllamaResumeAgent:
                     matched      = True
                     break
 
-            # Not a known key — treat as continuation of the previous value
             if not matched and current_key:
                 result[current_key] = result[current_key] + " " + line
 
-        # Coerce match_score to int
         try:
             result["match_score"] = int(str(result.get("match_score", 50)).strip())
         except (ValueError, TypeError):
@@ -523,31 +392,13 @@ class OllamaResumeAgent:
         return result
 
     def _get_structured_data(self, base_resume: str, job: dict) -> dict:
-        """
-        Ask the model to tailor the resume and parse its KEY: VALUE response.
-        The plain-text format cannot produce JSON syntax errors so no retry
-        is needed — any output the model returns is parseable.
-        """
+
         prompt = meta_prompt(base_resume, job)
         raw    = self._call(SYSTEM_META, prompt)
         return self._parse_kv(raw)
 
     def process_job(self, base_resume: str, job: dict,
                     out_dir: Path, idx: int) -> dict:
-        """
-        Full pipeline for a single job:
-          1. Call the model → get tailored JSON
-          2. Build LaTeX from JSON (Python-side, no model involvement)
-          3. Compute cosine similarity between tailored resume and JD
-          4. Write .tex file to disk
-          5. Return a result dict for the manifest
-
-        If anything goes wrong at step 1 or 2, we fall back to a
-        minimal .tex file so the batch doesn't stall.
-        Cosine similarity is computed on the plain-text resume content
-        extracted from the JSON, not on the LaTeX source, so special
-        characters don't interfere with the embedding.
-        """
         title   = str(job.get(COL_TITLE,   "Unknown"))
         company = str(job.get(COL_COMPANY, "Unknown"))
         fpath   = out_dir / safe_filename(idx, company, title)
@@ -560,16 +411,12 @@ class OllamaResumeAgent:
         resume_text  = ""   # plain-text resume content for similarity computation
 
         try:
-            # Step 1 — ask the model to tailor and score the resume
             data        = self._get_structured_data(base_resume, job)
             match_score = data.get("match_score", "N/A")
             keywords    = data.get("keywords",    [])
 
-            # Step 2 — Python assembles the LaTeX; model never touches markup
             latex = build_latex(data)
 
-            # Step 3 — build plain-text from the flat JSON for cosine similarity.
-            # We reassemble from the flat keys rather than parsing the LaTeX source.
             summary    = data.get("summary", "")
             skills_txt = " ".join(
                 data.get(f"skill_items_{n}", "")
@@ -585,7 +432,6 @@ class OllamaResumeAgent:
             )
             resume_text = f"{summary} {skills_txt} {exp_txt} {proj_txt}".strip()
 
-            # Step 4 — compute cosine similarity against the full JD text
             jd_text    = _jd(job, limit=3000)
             cosine_sim = compute_cosine_similarity(resume_text, jd_text)
 
@@ -594,7 +440,6 @@ class OllamaResumeAgent:
             print(f"LaTeX  : {len(latex)} chars (Python-generated)")
 
         except Exception as e:
-            # Something went wrong — write a fallback doc and keep going
             latex = fallback_latex(base_resume, job, str(e))
             print(f"{str(e)[:80]} — fallback written")
 
@@ -608,16 +453,11 @@ class OllamaResumeAgent:
             "company":    company,
             "match_score": match_score,
             "keywords":   keywords,
-            "cosine_sim": cosine_sim,   # semantic overlap score 0.0 – 1.0
+            "cosine_sim": cosine_sim,   
         }
 
     def run(self, jobs: list[dict], base_resume: str,
             out_dir: Path, max_jobs: int) -> list[dict]:
-        """
-        Process all jobs up to max_jobs, collect results, print a
-        summary with average match score and total time, and save
-        a JSON manifest of every output file for easy reference later.
-        """
         out_dir.mkdir(parents=True, exist_ok=True)
         total   = min(len(jobs), max_jobs)
         results = []
@@ -630,11 +470,9 @@ class OllamaResumeAgent:
 
         elapsed = time.time() - t0
 
-        # Average score only over jobs where the model returned a numeric score
         scored  = [r for r in results if isinstance(r["match_score"], int)]
         avg     = sum(r["match_score"] for r in scored) / len(scored) if scored else 0
 
-        # Average cosine similarity over jobs where it was successfully computed
         cos_scored = [r for r in results if isinstance(r.get("cosine_sim"), float)]
         avg_cos    = (sum(r["cosine_sim"] for r in cos_scored) / len(cos_scored)
                       if cos_scored else None)
@@ -661,40 +499,19 @@ class OllamaResumeAgent:
         print(f"Time              : {elapsed:.1f}s")
         print(f"{'═'*60}")
 
-        # Write a manifest so you can quickly look up which file belongs to which job.
-        # cosine_sim is included alongside match_score for downstream analysis.
+
         manifest = out_dir / "_manifest.json"
         manifest.write_text(json.dumps(results, indent=2), encoding="utf-8")
         print(f"Manifest          : {manifest}")
 
-        # Write a formatted Excel results sheet
         excel_out = out_dir / "_results.xlsx"
         save_results_excel(results, str(excel_out))
         print()
         return results
 
-# ════════════════════════════════════════════════════════════════════
-# RESULTS EXCEL WRITER
-# Saves every processed job's metrics to a formatted spreadsheet so
-# you can sort, filter, and compare scores at a glance.
-# Columns: #, Job Title, Company, LLM Match Score, Cosine Similarity,
-#          Keywords Matched, Keywords List, .tex File Path
-# ════════════════════════════════════════════════════════════════════
+
 
 def save_results_excel(results: list[dict], out_path: str) -> None:
-    """
-    Write the per-job results to a formatted Excel file.
-
-    Colour coding for LLM match score:
-      ≥ 75  →  green    (strong match)
-      ≥ 50  →  yellow   (moderate match)
-      < 50  →  red      (weak match)
-
-    Colour coding for cosine similarity:
-      ≥ 0.55  →  green
-      ≥ 0.35  →  yellow
-      < 0.35  →  red
-    """
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.utils import get_column_letter
 
@@ -702,14 +519,13 @@ def save_results_excel(results: list[dict], out_path: str) -> None:
     ws = wb.active
     ws.title = "Results"
 
-    # ── Colour constants ─────────────────────────────────────────────
-    HDR_BG     = "1F3864"   # dark navy — header row
-    HDR_FG     = "FFFFFF"
-    GREEN_BG   = "C6EFCE"   # good score
-    YELLOW_BG  = "FFEB9C"   # moderate score
-    RED_BG     = "FFC7CE"   # weak score
-    EVEN_BG    = "EBF3FB"   # alternating row shading
-    ODD_BG     = "FFFFFF"
+    HDR_BG = "1F3864"  
+    HDR_FG = "FFFFFF"
+    GREEN_BG = "C6EFCE"   # good score
+    YELLOW_BG = "FFEB9C"   
+    RED_BG = "FFC7CE"   
+    EVEN_BG = "EBF3FB"   
+    ODD_BG = "FFFFFF"
 
     def border():
         s = Side(style="thin", color="C0C0C0")
@@ -733,7 +549,6 @@ def save_results_excel(results: list[dict], out_path: str) -> None:
         except (ValueError, TypeError):
             return PatternFill("solid", start_color=ODD_BG)
 
-    # ── Column definitions: (header label, width, key in result dict) ─
     COLUMNS = [
         ("#",                    6,  "index"),
         ("Job Title",           38,  "title"),
@@ -745,7 +560,7 @@ def save_results_excel(results: list[dict], out_path: str) -> None:
         (".tex File",           48,  "file"),
     ]
 
-    # ── Header row ───────────────────────────────────────────────────
+    #  Header row 
     hdr_font  = Font(name="Arial", bold=True, color=HDR_FG, size=11)
     hdr_fill  = PatternFill("solid", start_color=HDR_BG)
     hdr_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
@@ -762,7 +577,7 @@ def save_results_excel(results: list[dict], out_path: str) -> None:
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = f"A1:{get_column_letter(len(COLUMNS))}1"
 
-    # ── Data rows ────────────────────────────────────────────────────
+    #  Data rows 
     data_font  = Font(name="Arial", size=10)
     bold_font  = Font(name="Arial", size=10, bold=True)
     ctr_align  = Alignment(horizontal="center", vertical="center")
@@ -772,7 +587,7 @@ def save_results_excel(results: list[dict], out_path: str) -> None:
         bg       = EVEN_BG if ri % 2 == 0 else ODD_BG
         row_fill = PatternFill("solid", start_color=bg)
 
-        # Flatten keywords list → comma-separated string
+        # Flatten keywords list comma-separated string
         kw_raw = r.get("keywords", [])
         if isinstance(kw_raw, list):
             kw_str   = ", ".join(str(k) for k in kw_raw)
@@ -803,7 +618,6 @@ def save_results_excel(results: list[dict], out_path: str) -> None:
                 cell.font      = bold_font
                 cell.alignment = ctr_align
             elif key == "cosine_sim":
-                # Display as 4 decimal places if numeric
                 if isinstance(val, float):
                     cell.value = round(val, 4)
                 cell.fill      = score_fill_cos(val)
@@ -820,7 +634,6 @@ def save_results_excel(results: list[dict], out_path: str) -> None:
 
         ws.row_dimensions[ri].height = 22
 
-    # ── Summary row at the bottom ────────────────────────────────────
     summary_row = len(results) + 2
     ws.cell(row=summary_row, column=1, value="AVERAGES").font = Font(
         name="Arial", bold=True, size=10)
@@ -848,13 +661,7 @@ def save_results_excel(results: list[dict], out_path: str) -> None:
     print(f"Results Excel     : {out_path}")
 
 
-# ════════════════════════════════════════════════════════════════════
-# CLI
-# Standard argparse entry point. Handles resume + excel path validation,
-# encoding detection for the resume text file, and kicks off the agent.
-# ════════════════════════════════════════════════════════════════════
 
-# Printed at the very end so the user knows exactly how to compile the .tex files
 COMPILE_HELP = """
   ── COMPILE .tex → PDF ────────────────────────────────────────────
   Install MacTeX (one time):   brew install --cask mactex-no-gui
@@ -884,7 +691,6 @@ def main():
     parser.add_argument("--out-dir",  default=OUTPUT_DIR,         help="Folder to write .tex output files")
     args = parser.parse_args()
 
-    # Validate input files exist before doing any work
     resume_path = Path(args.resume)
     if not resume_path.exists():
         print(f"Resume not found: {args.resume}"); sys.exit(1)
@@ -893,7 +699,6 @@ def main():
     if not excel_path.exists():
         print(f"Excel not found: {args.excel}"); sys.exit(1)
 
-    # Try a few common encodings — resume files aren't always clean UTF-8
     for enc in ("utf-8", "latin-1", "cp1252"):
         try:
             base_resume = resume_path.read_text(encoding=enc); break
@@ -906,7 +711,6 @@ def main():
     if not jobs:
         print("No jobs found."); sys.exit(1)
 
-    # Hand off to the agent — everything from here runs inside OllamaResumeAgent
     agent = OllamaResumeAgent(model=args.model)
     agent.run(jobs, base_resume, Path(args.out_dir), args.max_jobs)
     print(COMPILE_HELP)
