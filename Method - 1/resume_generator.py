@@ -1,18 +1,3 @@
-"""
-resume_generator.py
---------------------
-Core generation layer — reads the user's resume PDF, builds a per-job prompt,
-calls the local Ollama model, and compiles the LaTeX output to PDF.
-
-All fixed fields (name, phone, email, linkedin, technical skills, certifications,
-trainings) are parsed directly from the PDF in Python and injected into the
-template. The LLM only generates Education, Experience, and Leadership sections.
-This eliminates duplication, missing data, and incorrect extraction entirely.
-
-Dependencies:
-    pip install pdfplumber pypdf requests
-    sudo apt-get install texlive-latex-extra texlive-fonts-recommended
-"""
 
 import re
 import subprocess
@@ -24,21 +9,14 @@ import pdfplumber
 import requests
 
 
-# ── Config ───────────────────────────────────────────────────────────────────
+#  Config 
 OLLAMA_BASE_URL  = "http://localhost:11434"
 FINETUNED_MODEL  = "resume-generator"
 FALLBACK_MODEL   = "llama3"
 OUTPUT_DIR       = Path("./generated_resumes")
-# ─────────────────────────────────────────────────────────────────────────────
 
 
-# ── LaTeX template ────────────────────────────────────────────────────────────
-# Placeholders filled by Python, never by the LLM:
-#   %%NAME%%     → candidate full name
-#   %%CONTACT%%  → phone | email | linkedin line
-#   %%SKILLS%%   → full TECHNICAL SKILLS section
-#   %%CERTS%%    → full CERTIFICATIONS/TRAININGS section
-#   %%BODY%%     → LLM output (Education, Experience, Leadership only)
+
 LATEX_TEMPLATE = r"""\documentclass[10pt, letterpaper]{article}
 
 \usepackage[top=0.5in, bottom=0.5in, left=0.75in, right=0.75in]{geometry}
@@ -89,11 +67,11 @@ LATEX_TEMPLATE = r"""\documentclass[10pt, letterpaper]{article}
 """
 
 
-# ── PDF extraction ────────────────────────────────────────────────────────────
+#  PDF extraction 
 
 def extract_resume_text(pdf_path: str) -> str:
-    """I used pdfplumber as the primary extractor because it preserves layout
-    better than pypdf — important for multi-column resume formats. pypdf is the fallback."""
+    # I used pdfplumber as the primary extractor because it preserves layout
+    # better than pypdf — important for multi-column resume formats. pypdf is the fallback.
     pdf_path = Path(pdf_path)
     if not pdf_path.exists():
         raise FileNotFoundError(f"Resume PDF not found: {pdf_path}")
@@ -118,59 +96,37 @@ def extract_resume_text(pdf_path: str) -> str:
 
 
 def parse_profile_fields(text: str) -> dict:
-    """
-    I parse every fixed field directly from raw PDF text using regex so the LLM
-    never touches them. This is the single fix for all duplication and missing-data bugs.
-
-    Fields extracted:
-      - name          : first non-empty line
-      - phone         : standard US phone pattern
-      - email         : standard email pattern (handles trailing slash from pdfplumber)
-      - linkedin_handle / linkedin_url : from linkedin.com/in/... pattern
-      - skills_lines  : list of 'Category: skill1, skill2' strings (full block)
-      - certifications: everything after 'Certifications:' label, multi-line joined
-      - trainings     : everything after 'Trainings:' label, multi-line joined
-    """
+    # I parse every fixed field directly from raw PDF text using regex so the LLM
+    # never touches them. This is the single fix for all duplication and missing-data bugs.
     lines = [l.strip() for l in text.splitlines() if l.strip()]
 
-    # Name — first non-empty line of the resume
     name = lines[0] if lines else "Candidate Name"
 
-    # Phone — matches 617-555-1234 or (617) 555-1234 or 617.555.1234
     phone_m = re.search(r"(\(?\d{3}\)?[\s.\-]\d{3}[\s.\-]\d{4})", text)
     phone   = phone_m.group(1).strip() if phone_m else ""
 
-    # Email — strip any trailing slash pdfplumber sometimes appends
     email_m = re.search(r"[\w.\-+]+@[\w.\-]+\.[a-zA-Z]{2,}", text)
     email   = email_m.group(0).rstrip("/") if email_m else ""
 
-    # LinkedIn — extract handle from linkedin.com/in/<handle>
     li_m             = re.search(r"linkedin\.com/in/([\w\-]+)", text, re.IGNORECASE)
     linkedin_handle  = li_m.group(1) if li_m else ""
     linkedin_url     = f"https://linkedin.com/in/{linkedin_handle}" if linkedin_handle else ""
 
-    # Technical Skills — extract the full block between TECHNICAL SKILLS and the next
-    # all-caps section header. Each line is 'Category: skill1, skill2, ...'
     skills_block_m = re.search(
         r"TECHNICAL SKILLS\s*\n(.*?)(?=\n[A-Z][A-Z/ ]{3,}\n|\nCERTIFICATIONS|\nLEADERSHIP|\Z)",
         text, re.DOTALL | re.IGNORECASE
     )
     if skills_block_m:
         raw_skills = skills_block_m.group(1).strip()
-        # Each line is one skill category — preserve them as-is
         skills_lines = [l.strip() for l in raw_skills.splitlines() if l.strip()]
     else:
         skills_lines = []
 
-    # Certifications — grab everything after 'Certifications:' up to 'Trainings:'
-    # Multi-line: pdfplumber wraps long lines so we join with a space
     cert_m = re.search(
         r"Certifications?\s*[:\-]\s*(.*?)(?=\nTrainings?|\Z)",
         text, re.DOTALL | re.IGNORECASE
     )
     certifications = re.sub(r"\s+", " ", cert_m.group(1)).strip().rstrip(";,") if cert_m else ""
-
-    # Trainings — grab everything after 'Trainings:' up to the next section or end
     train_m = re.search(
         r"Trainings?\s*[:\-]\s*(.*?)(?=\n[A-Z]{2,}[A-Z /]*\n|\Z)",
         text, re.DOTALL | re.IGNORECASE
@@ -190,7 +146,7 @@ def parse_profile_fields(text: str) -> dict:
 
 
 def build_contact_line(fields: dict) -> str:
-    """Builds the centered contact line as LaTeX — phone | email | linkedin."""
+    # this part is helpinh us with the header part of the resume.
     parts = []
     if fields["phone"]:
         parts.append(fields["phone"])
@@ -204,19 +160,12 @@ def build_contact_line(fields: dict) -> str:
 
 
 def build_skills_block(fields: dict) -> str:
-    """
-    Builds the TECHNICAL SKILLS section directly from parsed PDF lines.
-    Each line looks like 'Category: skill1, skill2' — I bold the category label
-    and escape & characters so LaTeX doesn't choke on them.
-    """
     if not fields["skills_lines"]:
         return ""
 
     lines_latex = []
     for line in fields["skills_lines"]:
-        # Escape ampersands for LaTeX
         line = line.replace("&", r"\&")
-        # Split on first colon to separate category from skills
         if ":" in line:
             category, skills = line.split(":", 1)
             lines_latex.append(
@@ -229,13 +178,11 @@ def build_skills_block(fields: dict) -> str:
 
 
 def build_certs_block(fields: dict) -> str:
-    """Builds the CERTIFICATIONS/TRAININGS section directly from parsed PDF data."""
     if not fields["certifications"] and not fields["trainings"]:
         return ""
 
     lines = [r"\section{CERTIFICATIONS/TRAININGS}"]
     if fields["certifications"]:
-        # Escape & in cert text
         cert_text = fields["certifications"].replace("&", r"\&")
         lines.append(rf"\noindent\textbf{{Certifications:}} {cert_text}\\")
     if fields["trainings"]:
@@ -243,8 +190,6 @@ def build_certs_block(fields: dict) -> str:
         lines.append(rf"\noindent\textbf{{Trainings:}} {train_text}\\")
     return "\n".join(lines)
 
-
-# ── Ollama ────────────────────────────────────────────────────────────────────
 
 def get_ollama_model() -> str:
     """I query Ollama's /api/tags to check if the fine-tuned model exists —
@@ -261,8 +206,7 @@ def get_ollama_model() -> str:
         return FALLBACK_MODEL
 
 
-# The LLM is told to generate ONLY Education, Experience, and Leadership.
-# Skills and Certifications are already handled by Python above.
+# our prmpt along with the model to the ollama model
 SYSTEM_PROMPT = r"""You are an expert resume writer and LaTeX typesetter.
 
 You will generate ONLY three sections of a resume in LaTeX body content.
@@ -307,8 +251,6 @@ STRICT RULES:
 
 
 def build_prompt(profile_text: str, job: dict) -> str:
-    """I truncate both the job description and the profile to stay within
-    Ollama's 4096-token context window while keeping the most useful content."""
     tags_str   = ", ".join(job.get("tags", [])[:8])
     jd_snippet = job["description"][:1500]
 
@@ -329,8 +271,6 @@ def build_prompt(profile_text: str, job: dict) -> str:
 
 
 def call_ollama(model: str, system: str, user_prompt: str, timeout: int = 120) -> str:
-    """I set temperature=0.2 — lower than usual because format compliance
-    matters more than creativity for LaTeX resume generation."""
     payload = {
         "model":  model,
         "stream": False,
@@ -357,7 +297,7 @@ def call_ollama(model: str, system: str, user_prompt: str, timeout: int = 120) -
         return ""
 
 
-# ── Assembly ──────────────────────────────────────────────────────────────────
+#  Assembly 
 
 def clean_llm_output(raw: str) -> str:
     """Strip markdown fences and any preamble/header the model added by mistake."""
@@ -368,23 +308,13 @@ def clean_llm_output(raw: str) -> str:
     raw = re.sub(r"\\pagestyle.*?\n", "", raw)
     raw = re.sub(r"\\begin\{document\}", "", raw)
     raw = re.sub(r"\\end\{document\}", "", raw)
-    # Remove any stray header block the model added anyway
     raw = re.sub(r"\\begin\{center\}.*?\\end\{center\}", "", raw, flags=re.DOTALL)
-    # Remove any skills or certifications sections the model added despite instructions
     raw = re.sub(r"\\section\{TECHNICAL SKILLS\}.*?(?=\\section|\Z)", "", raw, flags=re.DOTALL)
     raw = re.sub(r"\\section\{CERTIFICATIONS.*?\}.*?(?=\\section|\Z)", "", raw, flags=re.DOTALL)
     return raw.strip()
 
 
 def assemble_latex(llm_body: str, fields: dict) -> str:
-    """
-    I assemble the final LaTeX by filling 5 separate placeholders from distinct sources:
-      %%NAME%%     — Python-parsed from PDF (never LLM)
-      %%CONTACT%%  — Python-built from parsed phone/email/linkedin
-      %%BODY%%     — LLM output (Education, Experience, Leadership only)
-      %%SKILLS%%   — Python-parsed and formatted from PDF skills block
-      %%CERTS%%    — Python-parsed from PDF certifications/trainings
-    """
     body = clean_llm_output(llm_body)
 
     latex = LATEX_TEMPLATE
@@ -397,15 +327,12 @@ def assemble_latex(llm_body: str, fields: dict) -> str:
 
 
 def has_required_sections(latex: str) -> bool:
-    """Lightweight sanity check before wasting time trying to compile bad LaTeX."""
     return all(tag in latex for tag in [r"\documentclass", r"\begin{document}", r"\end{document}"])
 
 
-# ── Compile ───────────────────────────────────────────────────────────────────
+#  Compile 
 
 def compile_latex_to_pdf(latex: str, output_path: Path) -> bool:
-    """I run pdflatex twice — the second pass resolves cross-references the first
-    pass leaves pending. Cleans up .aux/.log/.out on success."""
     tex_path = output_path.with_suffix(".tex")
     tex_path.write_text(latex, encoding="utf-8")
 
@@ -430,10 +357,10 @@ def compile_latex_to_pdf(latex: str, output_path: Path) -> bool:
             aux = output_path.with_suffix(ext)
             if aux.exists():
                 aux.unlink()
-        print(f"[LaTeX] ✓ PDF created: {pdf_path}")
+        print(f"[LaTeX] PDF created: {pdf_path}")
         return True
 
-    print(f"[LaTeX] ✗ Compilation failed — .tex saved at {tex_path}")
+    print(f"[LaTeX] Compilation failed — .tex saved at {tex_path}")
     return False
 
 
@@ -444,15 +371,12 @@ def safe_filename(s: str, max_len: int = 40) -> str:
     return s[:max_len]
 
 
-# ── Main batch loop ───────────────────────────────────────────────────────────
 
 def generate_resumes_for_jobs(
     jobs: list[dict],
     resume_pdf_path: str,
     output_dir: Optional[Path] = None,
 ) -> list[dict]:
-    """Main batch loop — runs every job through extract → prompt → generate → compile.
-    Each job is handled independently so one failure doesn't stop the rest of the batch."""
     out_dir = output_dir or OUTPUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -460,10 +384,8 @@ def generate_resumes_for_jobs(
     profile_text = extract_resume_text(resume_pdf_path)
     print(f"[Generator] Profile extracted ({len(profile_text)} chars)")
 
-    # Parse all fixed fields once — reused across every job in the batch
     fields = parse_profile_fields(profile_text)
 
-    # Print a verification summary so you can confirm extraction before generation starts
     print(f"\n[Parsed Fields]")
     print(f"  Name     : {fields['name']}")
     print(f"  Phone    : {fields['phone']}")
@@ -487,15 +409,14 @@ def generate_resumes_for_jobs(
         raw_resp = call_ollama(model, SYSTEM_PROMPT, build_prompt(profile_text, job))
 
         if not raw_resp:
-            print("         ✗ Empty response, skipping.\n")
+            print("Empty response, skipping.\n")
             results.append({"job": job, "status": "failed", "tex": None, "pdf": None})
             continue
 
-        # Assemble: Python header + LLM body + Python skills + Python certs
         latex = assemble_latex(raw_resp, fields)
 
         if not has_required_sections(latex):
-            print("         ✗ Invalid LaTeX after assembly, skipping.\n")
+            print("Invalid LaTeX after assembly, skipping.\n")
             results.append({"job": job, "status": "invalid_latex", "tex": None, "pdf": None})
             continue
 
@@ -511,27 +432,24 @@ def generate_resumes_for_jobs(
         })
 
         print()
-        time.sleep(1)  # small gap between Ollama calls to avoid overloading the local server
+        time.sleep(1)  # leaving gap , so that we dont overloading our ollama
 
     return results
 
 
 def print_summary(results: list[dict]):
-    """Prints a clean batch summary grouped by outcome: PDF created, .tex only, failed."""
     ok       = [r for r in results if r["status"] == "ok"]
     tex_only = [r for r in results if r["status"] == "tex_only"]
     failed   = [r for r in results if r["status"] in ("failed", "invalid_latex")]
 
-    print("\n" + "=" * 60)
     print(f"  BATCH SUMMARY  |  Total: {len(results)}  |  PDF: {len(ok)}  |  "
           f".tex only: {len(tex_only)}  |  Failed: {len(failed)}")
-    print("=" * 60)
     for r in ok:
-        print(f"  ✓ {r['job']['title']} @ {r['job']['company']}")
-        print(f"    → {r['pdf']}")
+        print(f"{r['job']['title']} @ {r['job']['company']}")
+        print(f"{r['pdf']}")
     for r in tex_only:
-        print(f"  ~ {r['job']['title']} @ {r['job']['company']}  (compile manually)")
-        print(f"    → {r['tex']}")
+        print(f"{r['job']['title']} @ {r['job']['company']}  (compile manually)")
+        print(f"{r['tex']}")
     for r in failed:
-        print(f"  ✗ {r['job']['title']} @ {r['job']['company']}  — {r['status']}")
-    print("=" * 60)
+        print(f"{r['job']['title']} @ {r['job']['company']}  — {r['status']}")
+    print("\n")
