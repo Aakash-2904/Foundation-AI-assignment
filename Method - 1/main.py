@@ -7,8 +7,8 @@ from resume_generator import generate_resumes_for_jobs, print_summary, OUTPUT_DI
 
 
 def parse_args():
-    # I used argparse here so users can control the full run from the command line
-    # without touching any source code. The defaults are set to be sensible for ML engineers but can be overridden.
+# I used argparse so we can run from cmd without editing code
+# defaults are basic, can change if needed
     parser = argparse.ArgumentParser(
         description="Local AI Resume Generator — Remotive + Arbeitnow + Ollama"
     )
@@ -46,7 +46,7 @@ def main():
 
     print(f"[Pipeline] {len(jobs)} jobs ftchd. strting resume genr \n")
 
-    #2 genrte  1 tailored resume per job
+    #2 gen 1 resume per job
     results = generate_resumes_for_jobs(
         jobs           = jobs,
         resume_pdf_path= str(resume_path),
