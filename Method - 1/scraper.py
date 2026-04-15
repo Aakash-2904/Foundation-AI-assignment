@@ -1,10 +1,3 @@
-"""
-scraper.py
-----------
-Data collection layer — scrapes Remotive and Arbeitnow public APIs
-and returns a unified list of job dicts for the generator to consume.
-"""
-
 import re
 import time
 import requests
@@ -20,8 +13,8 @@ def fetch_remotive_jobs(
     category: str = "machine-learning",
     limit: int = 5,
 ) -> list[dict]:
-# I used the Remotive public API here — defaulting category to 'machine-learning'
-# since this pipeline targets ML/DL roles. Returns a normalised list of job dicts.
+# I used the remotive pblic API here defaulting category to 'ML'
+# since this pipeline targets ML/DL roles, it Returns a normalised list of job dicts.
     params = {"limit": limit, "category": category}
     if search:
         params["search"] = search
@@ -32,7 +25,7 @@ def fetch_remotive_jobs(
         jobs = r.json().get("jobs", [])
     except requests.RequestException as e:
         print(f"[Remotive] Request failed: {e}")
-        return []  # return empty so pipeline continues with Arbeitnow alone
+        return [] 
 
     return [
         {
@@ -53,7 +46,6 @@ def fetch_arbeitnow_jobs(
     limit: int = 5,
 ) -> list[dict]:
 #I used Arbeitnow as a second source to widen the job pool beyond remote-only listings.
-    # Slicing with [:limit] instead of a query param — Arbeitnow ignores the limit field.
     params = {}
     if search:
         params["q"] = search
@@ -84,8 +76,7 @@ def fetch_all_jobs(
     search: str = "machine learning engineer",
     limit_per_source: int = 5,
 ) -> list[dict]:
-    # Single public entry point — merges results from both sources.
-    # I added a 0.5s sleep between calls to stay polite to both APIs.
+    # I added a 0.5s sleep between calls on ordr to avoid ovrld.
     print(f"\n[Scraper] Fetching Remotive  jobs  (search='{search}') ...")
     remotive  = fetch_remotive_jobs(search=search, limit=limit_per_source)
     time.sleep(0.5)
