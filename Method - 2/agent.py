@@ -6,21 +6,20 @@ try:
     import numpy as np
     from sentence_transformers import SentenceTransformer
     from sklearn.metrics.pairwise import cosine_similarity as _cos_sim
-
+    from sklearn.feature_extraction.text import TfidfVectorizer  
 # we are using all-MiniLM-L6-v2 cause it is small and  faster for embeddings
     _EMBED_MODEL = SentenceTransformer("all-MiniLM-L6-v2")
     COSINE_AVAILABLE = True
-    print("[Cosine] sentence-transformers loaded — cosine similarity enabled.")
+    print("cosine similarity enabled.")
 except ImportError:
     COSINE_AVAILABLE = False
-    print("[Cosine] sentence-transformers not found — cosine similarity will be N/A.")
-    print("         Install with:  pip install sentence-transformers scikit-learn numpy")
+    print("sentence-transformers not found")
 
 # config
-DEFAULT_EXCEL  = "jobs_output.xlsx"       # Excel file scraped by the job scraper
-OUTPUT_DIR     = "tailored_resumes_ollama_5"  # where all the .tex files will land
-DEFAULT_MAX    = 20                        # cap on how many jobs to process in one run
-DEFAULT_MODEL  = "llama3.2"               # Ollama model to use (swap for mistral, phi3, etc.)
+DEFAULT_EXCEL = "jobs_output.xlsx"       # Excel file scraped by the job scraper
+OUTPUT_DIR = "tailored_resumes_ollama_5"  # where all the .tex files will land
+DEFAULT_MAX = 20                        # cap on how many jobs to process in one run
+DEFAULT_MODEL = "llama3.2"               # Ollama model to use (swap for mistral, phi3, etc.)
 
 COL_TITLE = "Position Title"
 COL_COMPANY = "Company"
@@ -305,7 +304,33 @@ def compute_cosine_similarity(resume_text: str, jd_text: str) -> float | str:
     except Exception as e:
         print(f"[Cosine] Error computing similarity: {e}")
         return "N/A"
+def compute_tfidf_ats_score(resume_text: str, jd_text: str, top_n: int = 20) -> float | str:
 
+    if not COSINE_AVAILABLE:
+        return "N/A"
+    if not resume_text or not jd_text:
+        return "N/A"
+    try:
+        vectorizer = TfidfVectorizer(
+            stop_words="english",
+            ngram_range=(1, 2),  
+            max_features=200,    
+        )
+        vectorizer.fit([jd_text])
+        feature_names = vectorizer.get_feature_names_out()
+        tfidf_scores  = vectorizer.transform([jd_text]).toarray()[0]
+ 
+        top_indices  = tfidf_scores.argsort()[-top_n:][::-1]
+        top_keywords = [feature_names[i] for i in top_indices]
+ 
+        resume_lower = resume_text.lower()
+        hits  = sum(1 for kw in top_keywords if kw.lower() in resume_lower)
+        score = round(hits / top_n, 4)
+        return score
+    except Exception as e:
+        print(f"[TF-IDF] Error: {e}")
+        return "N/A"
+ 
 # ollama
 
 class OllamaResumeAgent:
@@ -550,6 +575,7 @@ def save_results_excel(results: list[dict], out_path: str) -> None:
         ("Company",             24,  "company"),
         ("LLM Match Score /100",18,  "match_score"),
         ("Cosine Similarity",   18,  "cosine_sim"),
+        ("TF-IDF ATS Score",    16,  "ats_score"),   
         ("Keywords Matched",    14,  "kw_count"),
         ("Matched Keywords",    40,  "keywords_str"),
         (".tex File",           48,  "file"),
@@ -635,7 +661,7 @@ def save_results_excel(results: list[dict], out_path: str) -> None:
 
     scored_llm = [r for r in results if isinstance(r.get("match_score"), int)]
     scored_cos = [r for r in results if isinstance(r.get("cosine_sim"), float)]
-
+    scored_ats = [r for r in results if isinstance(r.get("ats_score"),  float)]
     if scored_llm:
         avg_llm = round(sum(r["match_score"] for r in scored_llm) / len(scored_llm), 1)
         c = ws.cell(row=summary_row, column=4, value=avg_llm)
